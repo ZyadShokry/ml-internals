@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 
+### Sigmoid Activation Function
+
 class Sigmoid:
     def __init__(self):
         # y: output
@@ -17,6 +19,7 @@ class Sigmoid:
     def __str__(self):
         return 'Sigmoid'
 
+### ReLU Activation Function
 
 class ReLU:
     def __init__(self):
