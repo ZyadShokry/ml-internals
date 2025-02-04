@@ -1,7 +1,5 @@
-# -*- coding: utf-8 -*-
 import numpy as np
-from collections import OrderedDict
-import prettytable as pt
+from .optimizers import Parameter
 
 ### Dense (Fully Connected) Layer
 
@@ -18,13 +16,11 @@ class Dense:
         self.input_size = input_size
         self.output_size = output_size
         self.activation = activation
-        self.W = np.random.randn(input_size, output_size) * np.sqrt(2.0 / input_size)
-        self.b = np.zeros(output_size)
-        self.dW = np.zeros((input_size, output_size))
-        self.db = np.zeros(output_size)
+        self.W = Parameter(np.random.randn(input_size, output_size) * np.sqrt(2.0 / input_size))
+        self.b = Parameter(np.zeros(output_size))
         self.x = None # Placeholder for input data
         self.y = None # Placeholder for output data
-        self.optim = {}
+        self.params = [self.W, self.b]
         self.info()
 
     def init_weights(self, value):
@@ -48,7 +44,8 @@ class Dense:
         """
         self.batch_size = x.shape[0]
         self.x = x
-        self.y = np.dot(x, self.W) + self.b
+        W, b = self.W.value, self.b.value
+        self.y = np.dot(x, W) + b
         if self.activation is not None:
             self.y = self.activation.forward(self.y)
         return self.y
@@ -65,24 +62,10 @@ class Dense:
         """
         if self.activation is not None:
             dy = self.activation.backward(dy)
-        self.dW = np.dot(self.x.T, dy)
-        self.db = np.sum(dy, axis=0)
-        dx = np.dot(dy, self.W.T)
+        self.W.set_grad(np.dot(self.x.T, dy))
+        self.b.set_grad(np.sum(dy, axis=0))
+        dx = np.dot(dy, self.W.value.T)
         return dx
-
-    def update(self, **kwargs):
-        if 'optim' not in kwargs:
-            raise ValueError('Optimizer not provided')
-        if kwargs['optim'] == 'sgd':
-            lr = kwargs['lr'] if 'lr' in kwargs else 0.01
-            mom = kwargs['mom'] if 'mom' in kwargs else 0.0
-            if 'vW' not in self.optim:
-                self.optim['vW'] = np.zeros_like(self.W)
-                self.optim['vb'] = np.zeros_like(self.b)
-            self.optim['vW'] = mom * self.optim['vW'] - lr * self.dW
-            self.optim['vb'] = mom * self.optim['vb'] - lr * self.db
-            self.W += self.optim['vW']
-            self.b += self.optim['vb']
 
     def info(self):
         self.details = {
@@ -100,7 +83,7 @@ class Conv2D:
         Initializes the Conv2D layer.
 
         Args:
-            input_size (tuple): The size of the input (channels, height, width).
+            input_size (tuple): The size of the input depth.
             kernel_size (tuple): The size of the convolutional filter (height, width).
             num_kernels (int): Number of kernels (filters) to apply.
             padding (tuple): Padding to be added to input (height, width).
@@ -113,13 +96,12 @@ class Conv2D:
         self.padding = padding
         self.stride = stride
         self.activation = activation
-        self.W = np.random.randn(num_kernels, input_size[0], kernel_size[0], kernel_size[1]) * np.sqrt(2.0 / (input_size[0] * kernel_size[0] * kernel_size[1]))
-        self.b = np.zeros(num_kernels)
-        self.dW = np.zeros((num_kernels, input_size[0], kernel_size[0], kernel_size[1]))
-        self.db = np.zeros(num_kernels)
+        self.W = Parameter(np.random.randn(num_kernels, input_size[0], kernel_size[0], kernel_size[1]) * np.sqrt(2.0 / (input_size[0] * kernel_size[0] * kernel_size[1])))
+        self.b = Parameter(np.zeros(num_kernels))
+        self.params = [self.W, self.b]
         self.x = None # Placeholder for input data
         self.y = None # Placeholder for output data
-        self.optim = {}
+        # self.optim = None
         self.info()
 
     def init_weights(self, value):
@@ -192,11 +174,12 @@ class Conv2D:
         self.y = np.zeros((x.shape[0], self.num_kernels, int((x.shape[2] + 2 * self.padding[0] - self.kernel_size[0]) / self.stride[0] + 1),
                            int((x.shape[3] + 2 * self.padding[1] - self.kernel_size[1]) / self.stride[1] + 1)))
 
+        bias, W = self.b.value, self.W.value
         for b in range(x.shape[0]):
             for i in range(self.num_kernels):
                 for j in range(x.shape[1]):
-                    self.y[b, i] += self.convolve(x[b, j], self.W[i, j], padding=self.padding, stride=self.stride)
-                self.y[b, i] += self.b[i]
+                    self.y[b, i] += self.convolve(x[b, j], W[i, j], padding=self.padding, stride=self.stride)
+                self.y[b, i] += bias[i]
 
         if self.activation is not None:
             self.y = self.activation.forward(self.y)
@@ -217,42 +200,32 @@ class Conv2D:
             dy = self.activation.backward(dy)
 
         dx = np.zeros(self.x.shape)
+        W = self.W.value
         for b in range(self.x.shape[0]):
             for i in range(self.x.shape[1]):
                 for j in range(self.num_kernels):
                     dx[b, i] += self.convolve(self.dilate(dy[b, j], self.stride[1] - 1, self.stride[0] - 1),
-                                         np.rot90(self.W[j, i], 2),
+                                         np.rot90(W[j, i], 2),
                                          padding=(self.kernel_size[1] - 1, self.kernel_size[0] - 1))
 
-        self.dW = np.zeros(self.W.shape)
+        dW = np.zeros(W.shape)
+        
         for b in range(self.x.shape[0]):
             for i in range(self.num_kernels):
                 for j in range(self.x.shape[1]):
-                    self.dW[i, j] += self.convolve(self.x[b, j],
+                    dW[i, j] += self.convolve(self.x[b, j],
                                                 self.dilate(dy[b, i], self.stride[1] - 1,
                                                 self.stride[0] - 1),
                                                 padding=self.padding)
-
-        self.db = np.sum(dy, axis=(0, 2, 3))
+        self.W.set_grad(dW)
+        self.b.set_grad(np.sum(dy, axis=(0, 2, 3)))
         return dx
-
-    def update(self, **kwargs):
-        if 'optim' not in kwargs:
-            raise ValueError('Optimizer not provided')
-        if kwargs['optim'] == 'sgd':
-            lr = kwargs['lr'] if 'lr' in kwargs else 0.01
-            mom = kwargs['mom'] if 'mom' in kwargs else 0.0
-            if 'vW' not in self.optim:
-                self.optim['vW'] = np.zeros_like(self.W)
-                self.optim['vb'] = np.zeros_like(self.b)
-            self.optim['vW'] = mom * self.optim['vW'] - lr * self.dW
-            self.optim['vb'] = mom * self.optim['vb'] - lr * self.db
-            self.W += self.optim['vW']
-            self.b += self.optim['vb']
 
     def info(self):
         self.details = {
             'Type': 'Conv2D',
+            'Input': self.input_size,
+            'Activation': self.activation
         }
 
 ### Maximum Pooling Layer
@@ -324,9 +297,6 @@ class MaxPool:
                         dx[i, j, k * self.stride[0] + max_row, l * self.stride[1] + max_col] = dy[i, j, k, l]
         return dx
 
-    def update(self, **kwargs):
-        pass
-
     def info(self):
         self.details = {
             'Type': 'MaxPool',
@@ -378,9 +348,6 @@ class Flatten:
             numpy.ndarray: Gradient with respect to the input, reshaped back to the original input shape.
         """
         return dy.reshape(self.x.shape)
-
-    def update(self, **kwargs):
-        pass
 
     def info(self):
         self.details = {

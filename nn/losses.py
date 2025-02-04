@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import numpy as np
 
 ### Cross Entropy Loss Function
@@ -48,7 +47,7 @@ class CrossEntropy:
         m = y.shape[0]  # Number of samples
         prob = self.stable_softmax(y)
         log_likelihood = -np.log(prob[range(m), t])
-        loss = np.sum(log_likelihood)
+        loss = np.sum(log_likelihood) / m
         return loss
 
     def backward(self):
@@ -61,4 +60,5 @@ class CrossEntropy:
         m = self.t.shape[0]  # Number of samples
         prob = self.stable_softmax(self.y)
         prob[range(m), self.t] -= 1
+        prob /= m
         return prob
