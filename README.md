@@ -14,11 +14,11 @@ Before running the script, you need to install the required dependencies.
 ### Install Dependencies
 
 1. Clone or download this repository.
-2. Install the necessary Python libraries using `pip`. You will need `torch`, `torchvision`.
+2. Install the necessary Python libraries using `pip`. You will need `torch`, `torchvision` and `prettytable`.
 
    Run the following commands to install the dependencies:
 
    ```bash
-   pip install torch torchvision
+   pip install torch torchvision prettytable
    ```
 
